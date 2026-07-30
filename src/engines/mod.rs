@@ -104,6 +104,18 @@ impl fmt::Display for Engine {
     }
 }
 
+impl Serialize for Engine {
+    /// Serialize as the lowercase engine id (e.g. `"bing"`), matching `Display`,
+    /// the JSON API docs, and the `Deserialize` impl below so the value
+    /// round-trips.
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.id())
+    }
+}
+
 impl<'de> Deserialize<'de> for Engine {
     fn deserialize<D>(deserializer: D) -> Result<Engine, D::Error>
     where
@@ -245,7 +257,20 @@ pub struct EngineResponse {
     pub search_results: Vec<EngineSearchResult>,
     pub featured_snippet: Option<EngineFeaturedSnippet>,
     pub answer_html: Option<PreEscaped<String>>,
+    /// Optional machine-readable version of the answer, surfaced in the JSON API
+    /// alongside `answer_html`. `None` if the engine only produces HTML.
+    pub answer_structured: Option<serde_json::Value>,
     pub infobox_html: Option<PreEscaped<String>>,
+    /// Optional machine-readable version of the infobox, surfaced in the JSON
+    /// API alongside `infobox_html`. `None` if the engine only produces HTML.
+    pub infobox_structured: Option<serde_json::Value>,
+}
+
+/// The parsed result of a post-search engine (infobox rendered after the main
+/// results are known). Carries HTML plus an optional structured payload.
+pub struct PostSearchResponse {
+    pub html: PreEscaped<String>,
+    pub structured: Option<serde_json::Value>,
 }
 
 #[derive(Default)]
@@ -273,6 +298,20 @@ impl EngineResponse {
             infobox_html: Some(html),
             ..Default::default()
         }
+    }
+
+    /// Attach a machine-readable payload to the answer for the JSON API.
+    #[must_use]
+    pub fn with_answer_structured(mut self, structured: serde_json::Value) -> Self {
+        self.answer_structured = Some(structured);
+        self
+    }
+
+    /// Attach a machine-readable payload to the infobox for the JSON API.
+    #[must_use]
+    pub fn with_infobox_structured(mut self, structured: serde_json::Value) -> Self {
+        self.infobox_structured = Some(structured);
+        self
     }
 }
 
@@ -488,9 +527,13 @@ async fn make_requests(
         let postsearch_responses = postsearch_responses_result?;
 
         for (engine, response) in postsearch_responses {
-            if let Some(html) = response {
+            if let Some(post) = response {
                 progress_tx.send(ProgressUpdate::new(
-                    ProgressUpdateData::PostSearchInfobox(Infobox { html, engine }),
+                    ProgressUpdateData::PostSearchInfobox(Infobox {
+                        html: post.html,
+                        engine,
+                        structured: post.structured,
+                    }),
                     start_time,
                 ))?;
                 // break so we don't send multiple infoboxes
@@ -651,6 +694,7 @@ pub static CLIENT: LazyLock<wreq::Client> = LazyLock::new(|| {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Response {
+    #[serde(rename = "results")]
     pub search_results: Vec<SearchResult<EngineSearchResult>>,
     pub featured_snippet: Option<FeaturedSnippet>,
     pub answer: Option<Answer>,
@@ -661,6 +705,7 @@ pub struct Response {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ImagesResponse {
+    #[serde(rename = "results")]
     pub image_results: Vec<SearchResult<EngineImageResult>>,
     #[serde(skip)]
     pub config: Arc<Config>,
@@ -675,6 +720,7 @@ pub enum ResponseForTab {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SearchResult<R: Serialize> {
+    #[serde(flatten)]
     pub result: R,
     pub engines: BTreeSet<Engine>,
     pub score: f64,
@@ -693,6 +739,8 @@ pub struct Answer {
     #[serde(serialize_with = "serialize_markup")]
     pub html: PreEscaped<String>,
     pub engine: Engine,
+    /// Machine-readable payload, or `null` if the engine only produces HTML.
+    pub structured: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -700,6 +748,8 @@ pub struct Infobox {
     #[serde(serialize_with = "serialize_markup")]
     pub html: PreEscaped<String>,
     pub engine: Engine,
+    /// Machine-readable payload, or `null` if the engine only produces HTML.
+    pub structured: Option<serde_json::Value>,
 }
 
 pub struct AutocompleteResult {

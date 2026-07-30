@@ -1,7 +1,7 @@
 use maud::{html, PreEscaped};
 use scraper::{Html, Selector};
 
-use crate::engines::{HttpResponse, Response, CLIENT};
+use crate::engines::{HttpResponse, PostSearchResponse, Response, CLIENT};
 
 pub async fn request(response: &Response) -> Option<wreq::RequestBuilder> {
     for search_result in response.search_results.iter().take(8) {
@@ -13,7 +13,7 @@ pub async fn request(response: &Response) -> Option<wreq::RequestBuilder> {
     None
 }
 
-pub fn parse_response(HttpResponse { res, body, .. }: &HttpResponse) -> Option<PreEscaped<String>> {
+pub fn parse_response(HttpResponse { res, body, .. }: &HttpResponse) -> Option<PostSearchResponse> {
     let url = res.url().clone();
 
     let dom = Html::parse_document(body);
@@ -65,10 +65,22 @@ pub fn parse_response(HttpResponse { res, body, .. }: &HttpResponse) -> Option<P
         }
     };
 
-    Some(html! {
+    let structured = serde_json::json!({
+        "url": url.as_str(),
+        "title": title,
+        "category": category,
+        "version": version,
+    });
+
+    let html = html! {
         (title_html)
         div.infobox-docs_rs-doc {
             (PreEscaped(doc_html))
         }
+    };
+
+    Some(PostSearchResponse {
+        html,
+        structured: Some(structured),
     })
 }

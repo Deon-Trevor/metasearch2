@@ -2,7 +2,7 @@ use maud::{html, PreEscaped};
 use scraper::{Html, Selector};
 use url::Url;
 
-use crate::engines::{answer::regex, Response, CLIENT};
+use crate::engines::{answer::regex, PostSearchResponse, Response, CLIENT};
 
 pub async fn request(response: &Response) -> Option<wreq::RequestBuilder> {
     for search_result in response.search_results.iter().take(8) {
@@ -16,7 +16,7 @@ pub async fn request(response: &Response) -> Option<wreq::RequestBuilder> {
     None
 }
 
-pub fn parse_response(body: &str) -> Option<PreEscaped<String>> {
+pub fn parse_response(body: &str) -> Option<PostSearchResponse> {
     let dom = Html::parse_document(body);
 
     let title = dom
@@ -43,11 +43,11 @@ pub fn parse_response(body: &str) -> Option<PreEscaped<String>> {
 
     let answer = dom.select(&answer_query).next()?;
     let answer_id = answer.value().attr("data-answerid")?;
-    let answer_html = answer
+    let answer_body = answer
         .select(&Selector::parse("div.answercell > div.js-post-body").unwrap())
-        .next()?
-        .html()
-        .to_string();
+        .next()?;
+    let answer_text = answer_body.text().collect::<String>();
+    let answer_html = answer_body.html().to_string();
 
     let answer_html = ammonia::Builder::default()
         .url_relative(ammonia::UrlRelative::RewriteWithBase(url.clone()))
@@ -56,12 +56,23 @@ pub fn parse_response(body: &str) -> Option<PreEscaped<String>> {
 
     let url = format!("{url}#{answer_id}");
 
-    Some(html! {
+    let structured = serde_json::json!({
+        "url": url,
+        "title": title,
+        "answer_text": answer_text.trim(),
+    });
+
+    let html = html! {
         a href=(url) {
             h2 { (title) }
         }
         div.infobox-stackexchange-answer {
             (PreEscaped(answer_html))
         }
+    };
+
+    Some(PostSearchResponse {
+        html,
+        structured: Some(structured),
     })
 }

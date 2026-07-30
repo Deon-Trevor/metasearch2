@@ -116,6 +116,20 @@ pub fn render_engine_list(engines: &[engines::Engine], config: &Config) -> PreEs
     }
 }
 
+/// The envelope returned by the JSON API (enabled with `api = true`, requested
+/// with `?format=json` or an `Accept: application/json` header).
+///
+/// The `data` field is flattened in, so for the "all" tab the top level carries
+/// `results`, `featured_snippet`, `answer`, and `infobox`; for the "images" tab
+/// it carries `results`.
+#[derive(serde::Serialize)]
+struct ApiResponse {
+    query: String,
+    tab: String,
+    #[serde(flatten)]
+    data: ResponseForTab,
+}
+
 pub async fn get(
     Query(params): Query<HashMap<String, String>>,
     Extension(config): Extension<Config>,
@@ -180,20 +194,51 @@ pub async fn get(
             return (StatusCode::FORBIDDEN, "API access is disabled").into_response();
         }
 
+        // capture these before `query` is moved into the search task
+        let query_str = query.query.clone();
+        let tab_str = query.tab.to_string();
+
         let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
         let search_future = tokio::spawn(async move { engines::search(&query, progress_tx).await });
         if let Err(e) = search_future.await {
             return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
         }
 
-        let mut results = Vec::new();
+        let mut data: Option<ResponseForTab> = None;
+        let mut postsearch_infobox = None;
         while let Some(progress_update) = progress_rx.recv().await {
-            if let ProgressUpdateData::Response(r) = progress_update.data {
-                results.push(r);
+            match progress_update.data {
+                ProgressUpdateData::Response(r) => data = Some(r),
+                ProgressUpdateData::PostSearchInfobox(infobox) => {
+                    postsearch_infobox = Some(infobox);
+                }
+                ProgressUpdateData::Engine { .. } => {}
             }
         }
 
-        return Json(results).into_response();
+        let Some(mut data) = data else {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "search produced no results",
+            )
+                .into_response();
+        };
+
+        // The post-search infobox is sent as a separate progress update and would
+        // otherwise be dropped in JSON mode. Post-search only runs when no infobox
+        // already exists, so fold it into the response's infobox field.
+        if let (ResponseForTab::All(resp), Some(infobox)) = (&mut data, postsearch_infobox) {
+            if resp.infobox.is_none() {
+                resp.infobox = Some(infobox);
+            }
+        }
+
+        return Json(ApiResponse {
+            query: query_str,
+            tab: tab_str,
+            data,
+        })
+        .into_response();
     }
 
     let s = stream! {

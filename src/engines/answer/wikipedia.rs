@@ -108,10 +108,18 @@ pub fn parse_response(body: &str) -> eyre::Result<EngineResponse> {
     let page_title = title.replace(' ', "_");
     let page_url = format!("https://en.wikipedia.org/wiki/{page_title}");
 
-    Ok(EngineResponse::infobox_html(html! {
+    let markup = html! {
         a href=(page_url) {
             h2 { (title) }
         }
         p { (extract) }
-    }))
+    };
+
+    let structured = serde_json::json!({
+        "title": title,
+        "url": page_url,
+        "description": extract,
+    });
+
+    Ok(EngineResponse::infobox_html(markup).with_infobox_structured(structured))
 }

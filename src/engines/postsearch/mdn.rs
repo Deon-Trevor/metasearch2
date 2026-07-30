@@ -3,7 +3,7 @@ use scraper::{Html, Selector};
 use serde::Deserialize;
 use tracing::error;
 
-use crate::engines::{Engine, HttpResponse, Response, CLIENT};
+use crate::engines::{Engine, HttpResponse, PostSearchResponse, Response, CLIENT};
 
 #[derive(Deserialize)]
 pub struct MdnConfig {
@@ -26,7 +26,7 @@ pub async fn request(response: &Response) -> Option<wreq::RequestBuilder> {
 
 pub fn parse_response(
     HttpResponse { res, body, config }: &HttpResponse,
-) -> Option<PreEscaped<String>> {
+) -> Option<PostSearchResponse> {
     let config_toml = config.engines.get(Engine::Mdn).extra.clone();
     let config: MdnConfig = match toml::Value::Table(config_toml).try_into() {
         Ok(args) => args,
@@ -69,12 +69,22 @@ pub fn parse_response(
         .clean(&doc_html)
         .to_string();
 
-    Some(html! {
+    let structured = serde_json::json!({
+        "url": url.as_str(),
+        "title": page_title,
+    });
+
+    let html = html! {
         h2 {
             a href=(url) { (page_title) }
         }
         div.infobox-mdn-article {
             (PreEscaped(doc_html))
         }
+    };
+
+    Some(PostSearchResponse {
+        html,
+        structured: Some(structured),
     })
 }

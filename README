@@ -63,10 +63,48 @@ JSON API
 --------
 
 metasearch has a JSON API that can be enabled by setting `api = true` in your
-config. To use it, set the `Accept: application/json` header in your requests.
+config. Request it either by setting the `Accept: application/json` header or by
+adding the `format=json` query parameter.
 
 For example:
 curl 'http://localhost:28019/search?q=sandcats' -H 'Accept: application/json'
+curl 'http://localhost:28019/search?q=sandcats&format=json'
+
+The response is a single JSON object (the envelope):
+
+  {
+    "query": "sandcats",
+    "tab": "all",
+    "results": [
+      {
+        "url": "https://...",
+        "title": "...",
+        "description": "...",
+        "engines": ["brave", "google"],
+        "score": 2.05
+      }
+    ],
+    "featured_snippet": null,
+    "answer": null,
+    "infobox": {
+      "engine": "wikipedia",
+      "html": "<a href=...>...</a>",
+      "structured": { "title": "...", "url": "...", "description": "..." }
+    }
+  }
+
+Notes:
+
+  - `results` is sorted by `score` (highest first). `engines` lists which
+    upstream engines returned that URL, which is a useful corroboration signal.
+  - `answer` and `infobox` each carry rendered `html` plus an optional
+    `structured` object. `structured` is `null` for engines that only produce
+    HTML; when present, switch on the `engine` field to know its shape. It is
+    currently populated by wikipedia and the post-search engines (github,
+    stackexchange, docs_rs, mdn, minecraft_wiki).
+  - For the "images" tab (`tab=images`), the envelope carries only `query`,
+    `tab`, and `results` (each with `image_url`, `page_url`, `title`, `width`,
+    `height`, `engines`, `score`).
 
 The structure of the API is not guaranteed to be stable, as it relies on
 serializing internal structs. It may change without warning in the future.

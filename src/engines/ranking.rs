@@ -104,6 +104,7 @@ pub fn merge_engine_responses(
                 answer = Some(Answer {
                     html: engine_answer_html,
                     engine,
+                    structured: response.answer_structured,
                 });
             }
         }
@@ -118,6 +119,7 @@ pub fn merge_engine_responses(
                 infobox = Some(Infobox {
                     html: engine_infobox_html,
                     engine,
+                    structured: response.infobox_structured,
                 });
             }
         }

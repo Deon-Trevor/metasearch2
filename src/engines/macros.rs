@@ -1,7 +1,7 @@
 #[macro_export]
 macro_rules! engines {
     ($($engine:ident = $id:expr),* $(,)?) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
         pub enum Engine {
             $($engine,)*
         }
@@ -114,7 +114,7 @@ macro_rules! engine_postsearch_requests {
             }
 
             #[must_use]
-            pub fn postsearch_parse_response(&self, res: &HttpResponse) -> Option<maud::PreEscaped<String>> {
+            pub fn postsearch_parse_response(&self, res: &HttpResponse) -> Option<$crate::engines::PostSearchResponse> {
                 match self {
                     $(
                         Engine::$engine => $crate::engine_parse_response! { res, $module::$engine_id::$parse_response }?,

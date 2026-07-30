@@ -2,7 +2,7 @@ use maud::{html, PreEscaped};
 use scraper::{Html, Selector};
 use url::Url;
 
-use crate::engines::{answer::regex, Response, CLIENT};
+use crate::engines::{answer::regex, PostSearchResponse, Response, CLIENT};
 
 pub async fn request(response: &Response) -> Option<wreq::RequestBuilder> {
     for search_result in response.search_results.iter().take(8) {
@@ -14,7 +14,7 @@ pub async fn request(response: &Response) -> Option<wreq::RequestBuilder> {
     None
 }
 
-pub fn parse_response(body: &str) -> Option<PreEscaped<String>> {
+pub fn parse_response(body: &str) -> Option<PostSearchResponse> {
     let dom = Html::parse_document(body);
 
     let url_relative = dom
@@ -107,7 +107,12 @@ pub fn parse_response(body: &str) -> Option<PreEscaped<String>> {
         .collect::<String>()
     };
 
-    Some(html! {
+    let structured = serde_json::json!({
+        "url": url,
+        "title": title,
+    });
+
+    let html = html! {
         a href=(url) {
             h1 { (title) }
         }
@@ -120,5 +125,10 @@ pub fn parse_response(body: &str) -> Option<PreEscaped<String>> {
                 (PreEscaped(readme_html))
             }
         }
+    };
+
+    Some(PostSearchResponse {
+        html,
+        structured: Some(structured),
     })
 }

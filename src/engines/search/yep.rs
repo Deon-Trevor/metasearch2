@@ -57,7 +57,6 @@ pub fn parse_response(body: &str) -> eyre::Result<EngineResponse> {
     Ok(EngineResponse {
         search_results,
         featured_snippet: None,
-        answer_html: None,
-        infobox_html: None,
+        ..Default::default()
     })
 }
